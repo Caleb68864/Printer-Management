@@ -1,13 +1,10 @@
 import openpyxl
 import win32print
-import kivy
-from kivy.app import App
-from kivy.uix.button import Button
-from kivy.uix.label import Label
-from kivy.uix.gridlayout import GridLayout
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.checkbox import CheckBox
-kivy.require("1.10.1")
+import wx
+from wx import CheckListBox
+from wx import StaticText
+from wx import BoxSizer
+import FrmMain
 
 wb = openpyxl.load_workbook('Printers.xlsx')
 sheet = wb['Printers']
@@ -43,141 +40,121 @@ locations.sort()
         # win32print.SetDefaultPrinter(printer)
 
 
-class MainPage(BoxLayout):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+class MyFrame(wx.Frame):
+    def Select(self, sel_type, instance=None):
+        if sel_type == "Location":
+            if instance is not None:
+                col = instance.GetEventObject().GetName()
+                loc_id = col.replace(" ", "_")
+                loc_id = loc_id.replace("col_", "")
+                loc_list = self.FindWindowByName(loc_id, self)
+                for i in range(0, len(loc_list.Items)):
+                    if loc_list.IsChecked(i):
+                        loc_list.Check(i, False)
+                    else:
+                        loc_list.Check(i, True)
+        else:
+            for loc in locations:
+                checked = []
+                loc_id = loc.replace(" ", "_")
+                loc_list = self.FindWindowByName(loc_id, self)
+                if sel_type == "All":
+                    for p in printers:
+                        if loc == p['Location']:
+                            checked.append(p['Path'])
+                    loc_list.SetCheckedStrings(checked)
+                else:
+                    for i in range(0, len(loc_list.Items)):
+                        loc_list.Check(i, False)
 
-        # self.cols = 1
-        self.orientation = "vertical"
-        self.padding = '15sp'
-        self.loc_title = GridLayout()
-        self.loc_title.cols = len(locations)
-        self.add_widget(self.loc_title)
-        self.loc_grid = GridLayout()
-        self.loc_grid.cols = len(locations)
-        self.loc_grid.size_hint_y = 20
-        self.loc_grid.id = "loc_grid"
-        self.add_widget(self.loc_grid)
+    def updateStatus(self, txt):
+        print(txt)
+        self.sbStatus.PushStatusText(txt)
+        self.sbStatus.Refresh()
+        self.sbStatus.Update()
 
+    def ir_Printer(self, ir):
+        for loc in locations:
+            checked = []
+            loc_id = loc.replace(" ", "_")
+            loc_list = self.FindWindowByName(loc_id, self)
+            for i in loc_list.GetCheckedItems():
+                item = loc_list.Items[i]
+                # print(i)
+                try:
+                    status = ""
+                    end_status = ""
+                    if ir == "Install":
+                        status = "Installing {}".format(item)
+                        self.updateStatus(status)
+                        win32print.AddPrinterConnection(item)
+                        status = "Installation of {} Complete".format(item)
+                        self.updateStatus(status)
+                        end_status = "Installation Complete"
+                    else:
+                        status = "Removing {}".format(item)
+                        self.updateStatus(status)
+                        win32print.DeletePrinterConnection(item)
+                        status = "Removal of {} Complete".format(item)
+                        self.updateStatus(status)
+                        end_status = "Removal Complete"
+                    loc_list.Check(i, False)
+                    loc_list.Refresh()
+                    loc_list.Update()
+                    self.Refresh()
+                    self.Update()
+                except Exception as e:
+                    self.updateStatus(str(e))
+        self.updateStatus(end_status)
 
+    def btnSelectAll_Click(self, instance):
+        self.Select("All")
+
+    def btnSelectNone_Click(self, instance):
+        self.Select("None")
+
+    def btnSelectLoc_Click(self, instance):
+        self.Select("Location", instance=instance)
+
+    def btnInstall_Click(self, instance):
+        self.ir_Printer("Install")
+
+    def btnRemove_Click(self, instance):
+        self.ir_Printer("Remove")
+
+    def __init__(self, parent):
+        FrmMain.FrmMain.__init__(self, parent)
+        bsLocs = self.btnDestroy.GetContainingSizer()
+        self.btnDestroy.Destroy()
         for loc in locations:
             loc_id = loc.replace(" ", "_")
-            title_grid = BoxLayout()
-            title_grid.size_hint_y = 2
-            title_grid.add_widget(Label(text=loc, font_size='20sp'))
-            loc_check = CheckBox()
-            loc_check.bind(active=self.tg_box)
-            loc_check.id = loc_id
-            title_grid.add_widget(loc_check)
-            self.loc_title.add_widget(title_grid)
+            loc_box = BoxSizer()
+            loc_box.SetOrientation(wx.VERTICAL)
+            cbl_lbl = StaticText(self)
+            cbl_lbl.Label = str(loc)
+            cbl_lbl.SetName("col_{}".format(loc_id))
+            cbl_lbl.Bind( wx.EVT_LEFT_UP, self.btnSelectLoc_Click )
+            cbl_loc = CheckListBox(self)
+            cbl_loc.SetName(loc_id)
+            loc_box.Add(cbl_lbl, 0, wx.ALL, 5)
+            loc_box.Add(cbl_loc, 0, wx.ALL, 5)
+            bsLocs.Add(loc_box, 0, wx.ALL, 5)
+        for p in printers:
+            lid = p["Location"].replace(" ", "_")
+            loc_list = self.FindWindowByName(lid, self)
+            index = len(loc_list.Items) - 1
+            if index < 0:
+                index = 0
 
-            self.loc_box = BoxLayout()
-            self.loc_box.orientation = "vertical"
-            self.loc_box.id = loc_id
-            self.loc_grid.add_widget(self.loc_box)
-            for p in printers:
-                if p["Location"] == loc:
-                    print_grid = GridLayout()
-                    print_grid.cols = 2
-                    lb_id = p["Location"].replace(" ", "_")
-                    print_grid.add_widget(Label(text=p["Printer"]))
-                    check = CheckBox()
-                    check.id = p["Path"]
-                    print_grid.add_widget(check)
-                    self.loc_box.add_widget(print_grid)
+            loc_list.InsertItems([p["Path"]], index)
+            # loc_list.SetString(index, p["Printer"])
 
-        print(self.ids)
-
-        btnSelectAll = Button()
-        btnSelectAll.text = "Select All"
-        btnSelectAll.bind(on_press=self.sa_button)
-        self.add_widget(btnSelectAll)
-
-        btnSelectNone = Button()
-        btnSelectNone.text = "Select None"
-        btnSelectNone.bind(on_press=self.sn_button)
-        self.add_widget(btnSelectNone)
-
-        btnInstall = Button()
-        btnInstall.text = "Install"
-        btnInstall.bind(on_press=self.install_button)
-        self.add_widget(btnInstall)
-
-        btnRemove = Button()
-        btnRemove.text = "Remove"
-        btnRemove.bind(on_press=self.remove_button)
-        self.add_widget(btnRemove)
-
-        self.statusbar = Label(text="")
-        self.add_widget(self.statusbar)
-
-    def sa_button(self, instance):
-        for lg_child in self.loc_grid.children:
-            for pg in lg_child.children:
-                pg.children[0].active = True
-
-    def sn_button(self, instance):
-        for lg_child in self.loc_grid.children:
-            for pg in lg_child.children:
-                pg.children[0].active = False
-
-    def process_checkboxes(self, ir):
-        for lg_child in self.loc_grid.children:
-            for pg in lg_child.children:
-                txt = pg.children[1].text
-                cb_id = pg.children[0].id
-                if txt not in locations and txt is not None and cb_id is not None:
-                    if pg.children[0].active:
-                        try:
-                            if ir:
-                                print("Installing {}".format(txt))
-                                self.statusbar.text = "Installing {}".format(txt)
-                                win32print.AddPrinterConnection(cb_id)
-                                print("Installation of {} Complete".format(txt))
-                                self.statusbar.text = "Installation of {} Complete".format(txt)
-                            else:
-                                try:
-                                    print("Removing {}".format(txt))
-                                    self.statusbar.text = "Removing {}".format(txt)
-                                    win32print.DeletePrinterConnection(cb_id)
-                                    print("Removal of {} Complete".format(txt))
-                                    self.statusbar.text = "Removal of {} Complete".format(txt)
-                                except Exception as e:
-                                    if str(e) == "(1801, 'DeletePrinterConnection', 'The printer name is invalid.')":
-                                        self.statusbar.text = "{} Not Currently Installed".format(txt)
-                                    else:
-                                        self.statusbar.text = str(e)
-                                        print(e)
-                        except Exception as e:
-                            print(e)
-
-    def install_button(self, instance):
-        self.process_checkboxes(True)
-
-    def remove_button(self, instance):
-        self.process_checkboxes(False)
-
-    def tg_box(self, cb, value):
-        for cb_child in cb.parent.parent.parent.children:
-            if cb_child.id == "loc_grid":
-                for lg_child in cb_child.children:
-                    # Location Grid Columns
-                    # print(lg_child.id)
-                    if lg_child.id == cb.id:
-                        for pgc in lg_child.children:
-                            # print(pgc)
-                            for cbc in pgc.children:
-                                if value:
-                                    cbc.active = True
-                                else:
-                                    cbc.active = False
-
-
-class PrinterManager(App):
-    def build(self):
-        self.title = "Printer Management"
-        return MainPage()
+        self.Layout()
+        self.Fit()
+        self.Show(True)
 
 
 if __name__ == '__main__':
-    PrinterManager().run()
+    app = wx.App(False)
+    frame = MyFrame(None)
+    app.MainLoop()
